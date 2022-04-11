@@ -103,16 +103,22 @@ class WebDriverProxy:
         except Exception:  # pylint: disable=broad-except
             pass
 
-    def get_screenshot(
-        self, url: str, element_name: str, user: "User"
-    ) -> Optional[bytes]:
+    def access_url_with_auth(self, url: str, user: "User",) -> WebDriver:
+        """Create web driver with user authentication and access url"""
         driver = self.auth(user)
         driver.set_window_size(*self._window)
         driver.get(url)
-        img: Optional[bytes] = None
         selenium_headstart = current_app.config["SCREENSHOT_SELENIUM_HEADSTART"]
         logger.debug("Sleeping for %i seconds", selenium_headstart)
         sleep(selenium_headstart)
+
+        return driver
+
+    def get_screenshot(
+        self, url: str, element_name: str, user: "User",
+    ) -> Optional[bytes]:
+        driver = self.access_url_with_auth(url, user)
+        img: Optional[bytes] = None
 
         try:
             logger.debug("Wait for the presence of %s", element_name)
@@ -129,16 +135,10 @@ class WebDriverProxy:
                     (By.CLASS_NAME, "slice_container")
                 )
             )
-            selenium_animation_wait = current_app.config[
-                "SCREENSHOT_SELENIUM_ANIMATION_WAIT"
-            ]
-            logger.debug("Wait %i seconds for chart animation", selenium_animation_wait)
-            sleep(selenium_animation_wait)
-            logger.info("Taking a PNG screenshot of url %s", url)
+            logger.info("Taking a PNG screenshot or url %s", url)
             img = element.screenshot_as_png
         except TimeoutException:
             logger.warning("Selenium timed out requesting url %s", url, exc_info=True)
-            img = element.screenshot_as_png
         except StaleElementReferenceException:
             logger.error(
                 "Selenium got a stale element while requesting url %s",
@@ -150,3 +150,23 @@ class WebDriverProxy:
         finally:
             self.destroy(driver, current_app.config["SCREENSHOT_SELENIUM_RETRIES"])
         return img
+
+    def warm_up_cache(self, url: str, user: "User") -> bool:
+        element_name = "body"
+        driver = self.access_url_with_auth(url, user)
+
+        result = False
+        try:
+            logger.debug("Wait for the presence of %s", element_name)
+            WebDriverWait(driver, self._screenshot_locate_wait).until(
+                EC.presence_of_element_located((By.TAG_NAME, element_name))
+            )
+            result = True
+        except TimeoutException:
+            logger.error("Selenium timed out requesting url %s", url)
+        except WebDriverException as ex:
+            logger.error(ex)
+        finally:
+            self.destroy(driver, current_app.config["SCREENSHOT_SELENIUM_RETRIES"])
+
+        return result

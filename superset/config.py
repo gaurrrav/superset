@@ -141,7 +141,7 @@ SAMPLES_ROW_LIMIT = 1000
 FILTER_SELECT_ROW_LIMIT = 10000
 
 SUPERSET_WEBSERVER_PROTOCOL = "http"
-SUPERSET_WEBSERVER_ADDRESS = "0.0.0.0"
+SUPERSET_WEBSERVER_ADDRESS = "localhost"
 SUPERSET_WEBSERVER_PORT = 8088
 
 # This is an important setting, and should be lower than your
@@ -762,6 +762,13 @@ class CeleryConfig:  # pylint: disable=too-few-public-methods
             "task": "reports.prune_log",
             "schedule": crontab(minute=0, hour=0),
         },
+        "cache-warmup-hourly": {
+            "task": "cache-warmup",
+            "schedule": crontab(minute=40, hour='*'),  # @hourly
+            "kwargs": {
+                "strategy_name": "dummy"
+            },
+        }
     }
 
 

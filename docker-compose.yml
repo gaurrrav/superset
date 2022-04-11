@@ -115,7 +115,10 @@ services:
     command: ["/app/docker/docker-bootstrap.sh", "worker"]
     env_file: docker/.env
     restart: unless-stopped
-    depends_on: *superset-depends-on
+    depends_on: 
+      - redis
+      - db
+      - superset
     user: *superset-user
     volumes: *superset-volumes
     # Bump memory limit if processing selenium / thumbails on superset-worker
