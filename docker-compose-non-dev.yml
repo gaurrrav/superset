@@ -70,7 +70,7 @@ services:
     depends_on: 
       - redis
       - db
-      - supersets
+      - superset
     user: "root"
     volumes: *superset-volumes
 
