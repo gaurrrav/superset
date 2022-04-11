@@ -21,15 +21,17 @@ from urllib import request
 from urllib.error import URLError
 
 from celery.utils.log import get_task_logger
+from flask import current_app
 from sqlalchemy import and_, func
 
-from superset import app, db
+from superset import app, db, security_manager
 from superset.extensions import celery_app
 from superset.models.core import Log
 from superset.models.dashboard import Dashboard
 from superset.models.slice import Slice
 from superset.models.tags import Tag, TaggedObject
 from superset.utils.date_parser import parse_human_datetime
+from superset.utils.webdriver import WebDriverProxy
 from superset.views.utils import build_extra_filters
 
 logger = get_task_logger(__name__)
@@ -137,6 +139,29 @@ class DummyStrategy(Strategy):  # pylint: disable=too-few-public-methods
 
         return [get_url(chart) for chart in charts]
 
+class AllByForceStrategy(Strategy):  # pylint: disable=too-few-public-methods
+    """
+    Warm up all charts.
+
+    This is a dummy strategy that will fetch all charts. Can be configured by:
+
+        CELERYBEAT_SCHEDULE = {
+            'cache-warmup-hourly': {
+                'task': 'cache-warmup',
+                'schedule': crontab(minute=1, hour='*'),  # @hourly
+                'kwargs': {'strategy_name': 'allByForce'},
+            },
+        }
+
+    """
+
+    name = "allByForce"
+
+    def get_urls(self) -> List[str]:
+        session = db.create_scoped_session()
+        charts = session.query(Slice).all()
+
+        return [get_url(chart)+'&force=true' for chart in charts]
 
 class TopNDashboardsStrategy(Strategy):  # pylint: disable=too-few-public-methods
     """
@@ -194,14 +219,14 @@ class DashboardTagsStrategy(Strategy):  # pylint: disable=too-few-public-methods
                 'task': 'cache-warmup',
                 'schedule': crontab(minute=1, hour='*'),  # @hourly
                 'kwargs': {
-                    'strategy_name': 'dashboard_tags',
+                    'strategy_name': 'tagged',
                     'tags': ['core', 'warmup'],
                 },
             },
         }
     """
 
-    name = "dashboard_tags"
+    name = "tagged"
 
     def __init__(self, tags: Optional[List[str]] = None) -> None:
         super().__init__()
@@ -229,7 +254,7 @@ class DashboardTagsStrategy(Strategy):  # pylint: disable=too-few-public-methods
         tagged_dashboards = session.query(Dashboard).filter(Dashboard.id.in_(dash_ids))
         for dashboard in tagged_dashboards:
             for chart in dashboard.slices:
-                urls.append(get_url(chart))
+                urls.append(get_url(chart)+'&force=true')
 
         # add charts that are tagged
         tagged_objects = (
@@ -245,12 +270,12 @@ class DashboardTagsStrategy(Strategy):  # pylint: disable=too-few-public-methods
         chart_ids = [tagged_object.object_id for tagged_object in tagged_objects]
         tagged_charts = session.query(Slice).filter(Slice.id.in_(chart_ids))
         for chart in tagged_charts:
-            urls.append(get_url(chart))
+            urls.append(get_url(chart)+'&force=true')
 
         return urls
 
 
-strategies = [DummyStrategy, TopNDashboardsStrategy, DashboardTagsStrategy]
+strategies = [DummyStrategy, TopNDashboardsStrategy, DashboardTagsStrategy, AllByForceStrategy]
 
 
 @celery_app.task(name="cache-warmup")
@@ -283,10 +308,15 @@ def cache_warmup(
         return message
 
     results: Dict[str, List[str]] = {"success": [], "errors": []}
+
+    user = security_manager.find_user(current_app.config["THUMBNAIL_SELENIUM_USER"])
+    web_proxy = WebDriverProxy(driver_type=current_app.config["WEBDRIVER_TYPE"])
+
     for url in strategy.get_urls():
         try:
             logger.info("Fetching %s", url)
-            request.urlopen(url)  # pylint: disable=consider-using-with
+            #request.urlopen(url)  # pylint: disable=consider-using-with
+            web_proxy.warm_up_cache(url, user)
             results["success"].append(url)
         except URLError:
             logger.exception("Error warming up cache!")

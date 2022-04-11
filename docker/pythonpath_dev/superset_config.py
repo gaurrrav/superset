@@ -69,25 +69,45 @@ REDIS_RESULTS_DB = get_env_variable("REDIS_RESULTS_DB", "1")
 
 RESULTS_BACKEND = FileSystemCache("/app/superset_home/sqllab")
 
+CACHE_CONFIG = {
+    'CACHE_TYPE': 'RedisCache',
+    'CACHE_DEFAULT_TIMEOUT': 60 * 60 * 24,
+    'CACHE_KEY_PREFIX': 'superset_',
+    'CACHE_REDIS_HOST': 'redis',
+    'CACHE_REDIS_PORT': 6379,
+    'CACHE_REDIS_DB': 0,
+    # 'CACHE_REDIS_URL': 'redis://127.0.0.1:6379/0'
+}
 
-class CeleryConfig(object):
-    BROKER_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_CELERY_DB}"
-    CELERY_IMPORTS = ("superset.sql_lab",)
-    CELERY_RESULT_BACKEND = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_RESULTS_DB}"
-    CELERYD_LOG_LEVEL = "DEBUG"
-    CELERYD_PREFETCH_MULTIPLIER = 1
-    CELERY_ACKS_LATE = False
-    CELERYBEAT_SCHEDULE = {
-        "reports.scheduler": {
-            "task": "reports.scheduler",
-            "schedule": crontab(minute="*", hour="*"),
-        },
-        "reports.prune_log": {
-            "task": "reports.prune_log",
-            "schedule": crontab(minute=10, hour=0),
-        },
+# Cache for datasource metadata and query results
+DATA_CACHE_CONFIG = {
+    'CACHE_TYPE': 'RedisCache',
+    'CACHE_DEFAULT_TIMEOUT': 60 * 60 * 24,  # 1 day default (in secs)
+    'CACHE_KEY_PREFIX': 'superset_results_',
+    'CACHE_REDIS_HOST': 'redis',
+    'CACHE_REDIS_PORT': 6379,
+    'CACHE_REDIS_DB': 0,
+    # 'CACHE_REDIS_URL': 'redis://127.0.0.1:6379/0'
+}
+
+class CeleryConfig:
+    broker_url = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_CELERY_DB}"
+    imports = ("superset.sql_lab",)
+    result_backend = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_RESULTS_DB}"
+    worker_log_level = "DEBUG"
+    worker_prefetch_multiplier = 1
+    task_acks_late = False
+    beat_schedule = {
+        "cache-warmup": {
+            "task": "cache-warmup",
+            "schedule": crontab(minute=40, hour='*'),  # @hourly
+            "kwargs": {
+                "strategy_name": "dummy"
+            },
+        }
     }
 
+SUPERSET_WEBSERVER_ADDRESS = "superset"
 
 CELERY_CONFIG = CeleryConfig
 

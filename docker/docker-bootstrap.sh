@@ -40,11 +40,14 @@ if [[ "${1}" == "worker" ]]; then
   celery --app=superset.tasks.celery_app:app worker -Ofair -l INFO
 elif [[ "${1}" == "beat" ]]; then
   echo "Starting Celery beat..."
+  cp /app/docker/pythonpath_dev/superset_config.py /app/pythonpath/superset_config.py
   celery --app=superset.tasks.celery_app:app beat --pidfile /tmp/celerybeat.pid -l INFO -s "${SUPERSET_HOME}"/celerybeat-schedule
 elif [[ "${1}" == "app" ]]; then
   echo "Starting web app..."
   flask run -p 8088 --with-threads --reload --debugger --host=0.0.0.0
 elif [[ "${1}" == "app-gunicorn" ]]; then
   echo "Starting web app..."
+
+  cp /app/docker/pythonpath_dev/superset_config.py /app/pythonpath/superset_config.py
   /usr/bin/run-server.sh
 fi
