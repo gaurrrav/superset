@@ -67,7 +67,10 @@ services:
     command: ["/app/docker/docker-bootstrap.sh", "worker"]
     env_file: docker/.env-non-dev
     restart: unless-stopped
-    depends_on: *superset-depends-on
+    depends_on: 
+      - redis
+      - db
+      - supersets
     user: "root"
     volumes: *superset-volumes
 
